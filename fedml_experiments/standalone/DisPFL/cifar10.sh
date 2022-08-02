@@ -1,17 +1,17 @@
 #!/bin/bash
-python main_dispfl.py --model 'resnet18' \
+python main_dispfl.py --model 'lenet5' \
 --dataset 'cifar10' \
 --partition_method 'dir' \
 --partition_alpha '0.3' \
---batch_size 128 \
---lr 0.1 \
---lr_decay 0.998 \
---epochs 5 \
---client_num_in_total 100 --frac 0.1 \
---comm_round 500 \
---dense_ratio 0.5 \
+--batch_size 32 \
+--lr 0.01 \
+--lr_decay 1 \
+--epochs 10 \
+--client_num_in_total 10 --frac 1 \
+--comm_round 100 \
+--dense_ratio 0.3 \
 --anneal_factor 0.5 \
---seed 2022 \
+--seed 1 \
 --cs 'random' \
 --dis_gradient_check \
 --different_initial

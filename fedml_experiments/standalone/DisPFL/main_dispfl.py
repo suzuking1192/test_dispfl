@@ -6,10 +6,15 @@ import sys
 import pdb
 import numpy as np
 import torch
+from torch import nn
+import torch.nn.functional as F
+import torch.nn.init as init
 
 
 # sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../")))
-sys.path.insert(0, os.path.abspath("/gdata/dairong/DisPFL/"))
+sys.path.insert(0, os.path.abspath("/Users/yutosuzuki/code/imtrack_yuto/DisPFL/"))
+
+
 from fedml_api.data_preprocessing.cifar100.data_loader import load_partition_data_cifar100
 from fedml_api.model.cv.vgg import vgg16, vgg11
 from fedml_api.model.cv.cnn_cifar10 import cnn_cifar10, cnn_cifar100
@@ -85,7 +90,7 @@ def add_args(parser):
     parser.add_argument('--anneal_factor', type=float, default=0.5,
                         help='anneal factor for pruning')
 
-    parser.add_argument("--seed", type=int, default=1024)
+    parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--cs", type = str, default='v0')
     parser.add_argument("--active", type=float,default=1.0)
 
@@ -101,6 +106,8 @@ def add_args(parser):
     parser.add_argument("--diff_spa", action='store_true')
     parser.add_argument("--global_test", action='store_true')
     parser.add_argument("--tag", type=str, default="test")
+    parser.add_argument("--fedpms_folder_dir", type=str, default="/Users/yutosuzuki/code/imtrack_yuto/fl_reseach_work_in_progress/")
+    parser.add_argument("--source_data_dir", type=str, default="/Users/yutosuzuki/code/imtrack_yuto/data/")
     return parser
 
 
@@ -109,7 +116,7 @@ def load_data(args, dataset_name):
         args.data_dir += "cifar10"
         train_data_num, test_data_num, train_data_global, test_data_global, \
         train_data_local_num_dict, train_data_local_dict, test_data_local_dict, \
-        class_num = load_partition_data_cifar10(args.data_dir, args.partition_method,
+        class_num = load_partition_data_cifar10(args.fedpms_folder_dir,args.source_data_dir,args.epochs,args.data_dir, args.partition_method,
                                 args.partition_alpha, args.client_num_in_total, args.batch_size, logger)
     elif dataset_name == "cifar100":
         args.data_dir += "cifar100"
@@ -132,18 +139,99 @@ def load_data(args, dataset_name):
 
 
 def create_model(args, model_name,class_num):
-    model = None
-    if model_name == "cnn_cifar10":
-        model = cnn_cifar10()
-    elif model_name == "cnn_cifar100":
-        model = cnn_cifar100()
-    elif model_name == "resnet18" and args.dataset != 'tiny':
-        model = customized_resnet18(class_num=class_num)
-    elif model_name == "resnet18" and args.dataset == 'tiny':
-        model = tiny_resnet18(class_num=class_num)
-    elif model_name == "vgg11":
-        model = vgg11(class_num)
-    return model
+    # model = None
+    # if model_name == "cnn_cifar10":
+    #     model = cnn_cifar10()
+    # elif model_name == "cnn_cifar100":
+    #     model = cnn_cifar100()
+    # elif model_name == "resnet18" and args.dataset != 'tiny':
+    #     model = customized_resnet18(class_num=class_num)
+    # elif model_name == "resnet18" and args.dataset == 'tiny':
+    #     model = tiny_resnet18(class_num=class_num)
+    # elif model_name == "vgg11":
+    #     model = vgg11(class_num)
+    class LeNet5Cifar10(nn.Module):
+        def __init__(self):
+            super(LeNet5Cifar10, self).__init__()
+            self.conv1 = nn.Conv2d(3, 6, 5)
+            #self.bn1 = nn.BatchNorm2d(6)
+            self.pool = nn.MaxPool2d(2, 2)
+            self.conv2 = nn.Conv2d(6, 16, 5)
+            #self.bn2 = nn.BatchNorm2d(16)
+            self.fc1 = nn.Linear(16 * 5 * 5, 120)
+            self.fc2 = nn.Linear(120, 84)
+            self.fc3 = nn.Linear(84, 10)
+
+        def forward(self, x):
+            x = self.pool(F.relu(self.conv1(x)))
+            x = self.pool(F.relu(self.conv2(x)))
+            x = x.view(-1, 16 * 5 * 5)
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.fc3(x)
+            return x
+
+    
+    def weight_init(m):
+        '''
+        Usage:
+            model = Model()
+            model.apply(weight_init)
+        '''
+        if isinstance(m, nn.Conv1d):
+            init.normal_(m.weight.data)
+            if m.bias is not None:
+                init.normal_(m.bias.data)
+        elif isinstance(m, nn.Conv2d):
+            init.xavier_normal_(m.weight.data)
+            if m.bias is not None:
+                init.normal_(m.bias.data)
+            # init.normal_(m.weight.data)
+            # if m.bias is not None:
+            #     init.normal_(m.bias.data, mean=0, std=0.001)
+        elif isinstance(m, nn.Conv3d):
+            init.xavier_normal_(m.weight.data)
+            if m.bias is not None:
+                init.normal_(m.bias.data)
+        elif isinstance(m, nn.ConvTranspose1d):
+            init.normal_(m.weight.data)
+            if m.bias is not None:
+                init.normal_(m.bias.data)
+        elif isinstance(m, nn.ConvTranspose2d):
+            init.xavier_normal_(m.weight.data)
+            if m.bias is not None:
+                init.normal_(m.bias.data)
+        elif isinstance(m, nn.ConvTranspose3d):
+            init.xavier_normal_(m.weight.data)
+            if m.bias is not None:
+                init.normal_(m.bias.data)
+        elif isinstance(m, nn.BatchNorm1d):
+            init.normal_(m.weight.data, mean=1, std=0.02)
+            init.constant_(m.bias.data, 0)
+        elif isinstance(m, nn.BatchNorm2d):
+            init.normal_(m.weight.data, mean=1, std=0.02)
+            init.constant_(m.bias.data, 0)
+        elif isinstance(m, nn.BatchNorm3d):
+            init.normal_(m.weight.data, mean=1, std=0.02)
+            init.constant_(m.bias.data, 0)
+        elif isinstance(m, nn.Linear):
+            init.xavier_normal_(m.weight.data)
+            init.normal_(m.bias.data)
+            # init.normal_(m.weight.data)
+            # init.normal_(m.bias.data, mean=0, std=0.001)
+        return 
+
+    args.device = torch.device('cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu')
+
+    net_glob = LeNet5Cifar10().to(args.device)
+    net_glob.apply(weight_init)
+    
+    file_path = str(args.fedpms_folder_dir) + "src/data/weights/" + str(args.model)  + str("_seed_") + str(args.seed) + ".pt"
+    initial_state_dict = torch.load(file_path)
+
+    net_glob.load_state_dict(initial_state_dict)
+
+    return net_glob
 
 
 def custom_model_trainer(args, model, logger):
@@ -206,7 +294,7 @@ if __name__ == "__main__":
     args.identity += '-seed' + str(args.seed)
 
     cur_dir = os.path.abspath(__file__).rsplit("/", 1)[0]
-    log_path = '/gdata/dairong/DisPFL/fedml_experiments/standalone/DisPFL/LOG/' + args.dataset + '/' + args.identity + '.log'
+    log_path = '/Users/yutosuzuki/code/imtrack_yuto/DisPFL/fedml_experiments/standalone/DisPFL/LOG/' + args.dataset + '/' + args.identity + '.log'
     logger = logger_config(log_path=log_path, logging_name=args.identity)
 
 
@@ -224,6 +312,8 @@ if __name__ == "__main__":
 
     # load data
     dataset = load_data(args, args.dataset)
+    
+
 
     # create model.
     model = create_model(args, model_name=args.model,class_num=len(dataset[-1][0]))

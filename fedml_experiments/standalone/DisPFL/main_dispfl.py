@@ -69,7 +69,7 @@ def add_args(parser):
     parser.add_argument('--frac', type=float, default=0.1, metavar='NN',
                         help='available communication fraction each round')
 
-    parser.add_argument('--momentum', type=float, default=0, metavar='NN',
+    parser.add_argument('--momentum', type=float, default=0.5, metavar='NN',
                         help='momentum')
 
     parser.add_argument('--comm_round', type=int, default=10,

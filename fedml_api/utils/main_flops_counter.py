@@ -144,9 +144,9 @@ def count_model_param_flops(model=None,dataset=None, multiply_adds=True, full=Fa
     elif dataset == "cifar100":
         input_channel = 3
         input_res = 32
-    elif dataset == "tiny":
-        input_channel = 3
-        input_res = 64
+    elif dataset == "mnist":
+        input_channel = 1
+        input_res = 28
     device = next(model.parameters()).device
     input = Variable(torch.rand(input_channel,input_res,input_res).unsqueeze(0), requires_grad = True).to(device)
 

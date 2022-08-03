@@ -198,60 +198,95 @@ def partition_data( datadir, partition, n_nets, alpha, logger):
     return X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts
 
 
-def get_dataloader_CIFAR100(datadir, train_bs, test_bs, dataidxs=None,test_idxs=None, cache_train_data_set=None,cache_test_data_set=None, logger = None):
-    transform_train, transform_test = _data_transforms_cifar100()
+# def get_dataloader_CIFAR100(datadir, train_bs, test_bs, dataidxs=None,test_idxs=None, cache_train_data_set=None,cache_test_data_set=None, logger = None):
+#     transform_train, transform_test = _data_transforms_cifar100()
 
-    dataidxs=np.array(dataidxs)
+#     dataidxs=np.array(dataidxs)
 
-    logger.info("train_num{}  test_num{}".format(len(dataidxs),len(test_idxs)))
-    train_ds = CIFAR100_truncated(datadir, dataidxs=dataidxs, train=True, transform=transform_train, download=True,cache_data_set=cache_train_data_set)
-    test_ds = CIFAR100_truncated(datadir, dataidxs=test_idxs, train=False, transform=transform_test, download=True,
-                      cache_data_set=cache_test_data_set)
-    train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, shuffle=True, drop_last=False)
-    test_dl = data.DataLoader(dataset=test_ds, batch_size=test_bs, shuffle=True, drop_last=False)
-    return train_dl, test_dl
-
-
+#     logger.info("train_num{}  test_num{}".format(len(dataidxs),len(test_idxs)))
+#     train_ds = CIFAR100_truncated(datadir, dataidxs=dataidxs, train=True, transform=transform_train, download=True,cache_data_set=cache_train_data_set)
+#     test_ds = CIFAR100_truncated(datadir, dataidxs=test_idxs, train=False, transform=transform_test, download=True,
+#                       cache_data_set=cache_test_data_set)
+#     train_dl = data.DataLoader(dataset=train_ds, batch_size=train_bs, shuffle=True, drop_last=False)
+#     test_dl = data.DataLoader(dataset=test_ds, batch_size=test_bs, shuffle=True, drop_last=False)
+#     return train_dl, test_dl
 
 
-def load_partition_data_cifar100( data_dir, partition_method, partition_alpha, client_number, batch_size, logger):
-    X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts = partition_data(
-                                                                                             data_dir,
-                                                                                             partition_method,
-                                                                                             client_number,
-                                                                                             partition_alpha, logger = logger)
+import pickle
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
+
+class DatasetSplit(Dataset):
+    def __init__(self, dataset, idxs):
+        self.dataset = dataset
+        self.idxs = list(idxs)
+
+    def __len__(self):
+        return len(self.idxs)
+
+    def __getitem__(self, item):
+        image, label = self.dataset[self.idxs[item]]
+        return image, label
+
+def load_partition_data_cifar100(fedpms_folder_dir ,source_data_dir,local_bs, data_dir, partition_method, partition_alpha, client_number, batch_size, logger):
+    # X_train, y_train, X_test, y_test, net_dataidx_map, traindata_cls_counts = partition_data(
+    #                                                                                          data_dir,
+    #                                                                                          partition_method,
+    #                                                                                          client_number,
+    #                                                                                          partition_alpha, logger = logger)
     # get local dataset
     data_local_num_dict = dict()
     train_data_local_dict = dict()
     test_data_local_dict = dict()
-    transform_train, transform_test = _data_transforms_cifar100()
+    # transform_train, transform_test = _data_transforms_cifar100()
 
-    cache_train_data_set=CIFAR100(data_dir, train=True, transform=transform_train, download=True)
-    cache_test_data_set = CIFAR100(data_dir, train=False, transform=transform_test, download=True)
-    idx_test = [[] for i in range(100)]
-    # checking
-    for label in range(100):
-        idx_test[label] = np.where(y_test == label)[0]
-    test_dataidxs = [[] for i in range(client_number)]
-    tmp_tst_num = math.ceil(len(cache_test_data_set) / client_number)
+    # Load dataset
+    data_dir = str(source_data_dir) + 'cifar100/'
+    
+    apply_transform = transforms.Compose(
+        [transforms.ToTensor(),
+         transforms.Normalize(mean=[0.507, 0.487, 0.441], std=[0.267, 0.256, 0.276])])
+    
+    train_dataset = datasets.CIFAR100(data_dir, train=True, download=True, transform=apply_transform)
+    
+    test_dataset = datasets.CIFAR100(data_dir, train=False, download=True, transform=apply_transform)
+    
+    file_name_train = str(fedpms_folder_dir) + 'src/data/'  + str("cifar100") + "/train.p"
+    with open(file_name_train, 'rb') as fp:
+        user_groups_train = pickle.load(fp)
+    
+    file_name_test = str(fedpms_folder_dir) +'src/data/'  + str("cifar100") + "/test.p"
+    with open(file_name_test, 'rb') as fp:
+        user_groups_test = pickle.load(fp)
+
+    # cache_train_data_set=CIFAR100(data_dir, train=True, transform=transform_train, download=True)
+    # cache_test_data_set = CIFAR100(data_dir, train=False, transform=transform_test, download=True)
+    # idx_test = [[] for i in range(100)]
+    # # checking
+    # for label in range(100):
+    #     idx_test[label] = np.where(y_test == label)[0]
+    # test_dataidxs = [[] for i in range(client_number)]
+    # tmp_tst_num = math.ceil(len(cache_test_data_set) / client_number)
     for client_idx in range(client_number):
-        for label in range(100):
-            # each has 100 pieces of testing data
-            label_num = math.ceil(traindata_cls_counts[client_idx][label] / sum(traindata_cls_counts[client_idx]) * tmp_tst_num)
-            rand_perm = np.random.permutation(len(idx_test[label]))
-            if len(test_dataidxs[client_idx]) == 0:
-                test_dataidxs[client_idx] = idx_test[label][rand_perm[:label_num]]
-            else:
-                test_dataidxs[client_idx] = np.concatenate(
-                    (test_dataidxs[client_idx], idx_test[label][rand_perm[:label_num]]))
-        dataidxs = net_dataidx_map[client_idx]
-        train_data_local, test_data_local = get_dataloader_CIFAR100( data_dir, batch_size, batch_size,
-                                                 dataidxs,test_dataidxs[client_idx] ,cache_train_data_set=cache_train_data_set,cache_test_data_set=cache_test_data_set ,logger=logger)
+        # for label in range(100):
+        #     # each has 100 pieces of testing data
+        #     label_num = math.ceil(traindata_cls_counts[client_idx][label] / sum(traindata_cls_counts[client_idx]) * tmp_tst_num)
+        #     rand_perm = np.random.permutation(len(idx_test[label]))
+        #     if len(test_dataidxs[client_idx]) == 0:
+        #         test_dataidxs[client_idx] = idx_test[label][rand_perm[:label_num]]
+        #     else:
+        #         test_dataidxs[client_idx] = np.concatenate(
+        #             (test_dataidxs[client_idx], idx_test[label][rand_perm[:label_num]]))
+        # dataidxs = net_dataidx_map[client_idx]
+        # # train_data_local, test_data_local = get_dataloader_CIFAR100( data_dir, batch_size, batch_size,
+        #                                          dataidxs,test_dataidxs[client_idx] ,cache_train_data_set=cache_train_data_set,cache_test_data_set=cache_test_data_set ,logger=logger)
+        train_data_local, test_data_local = DataLoader(DatasetSplit(train_dataset, user_groups_train[client_idx]), batch_size=local_bs, shuffle=True),DataLoader(DatasetSplit(test_dataset, user_groups_test[client_idx]), batch_size=200)
         local_data_num = len(train_data_local.dataset)
         data_local_num_dict[client_idx] = local_data_num
         logger.info("client_idx = %d, local_sample_number = %d" % (client_idx, local_data_num))
         train_data_local_dict[client_idx] = train_data_local
         test_data_local_dict[client_idx] = test_data_local
-    record_part(y_test, traindata_cls_counts, test_dataidxs, logger)
+    #record_part(y_test, traindata_cls_counts, test_dataidxs, logger)
     return None, None, None, None, \
-           data_local_num_dict, train_data_local_dict, test_data_local_dict, traindata_cls_counts
+           data_local_num_dict, train_data_local_dict, test_data_local_dict, [[100]]

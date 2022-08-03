@@ -122,13 +122,13 @@ def load_data(args, dataset_name):
         args.data_dir += "cifar100"
         train_data_num, test_data_num, train_data_global, test_data_global, \
         train_data_local_num_dict, train_data_local_dict, test_data_local_dict, \
-        class_num = load_partition_data_cifar100(args.data_dir, args.partition_method,
+        class_num = load_partition_data_cifar100(args.fedpms_folder_dir,args.source_data_dir,args.epochs,args.data_dir, args.partition_method,
                                                 args.partition_alpha, args.client_num_in_total, args.batch_size, logger)
     elif dataset_name == "mnist":
         args.data_dir += "tiny_imagenet"
         train_data_num, test_data_num, train_data_global, test_data_global, \
         train_data_local_num_dict, train_data_local_dict, test_data_local_dict, \
-        class_num = load_partition_data_tiny(args.data_dir, args.partition_method,
+        class_num = load_partition_data_tiny(args.fedpms_folder_dir,args.source_data_dir,args.epochs,args.data_dir, args.partition_method,
                                              args.partition_alpha, args.client_num_in_total,
                                                  args.batch_size, logger)
 
@@ -270,11 +270,11 @@ def create_model(args, model_name,class_num):
     elif args.dataset == "cifar100":
         net_glob = LeNet5Cifar100().to(args.device)
         net_glob.apply(weight_init)
-        file_path = "src/data/weights/" + str(args.model) + str("_dataset_")  + str(args.dataset) + str("_seed_") + str(args.seed) + ".pt"
+        file_path = str(args.fedpms_folder_dir) + "src/data/weights/" + str(args.model) + str("_dataset_")  + str(args.dataset) + str("_seed_") + str(args.seed) + ".pt"
     elif args.dataset == "mnist":
         net_glob = LeNet5Mnist().to(args.device)
         net_glob.apply(weight_init)
-        file_path = "src/data/weights/" + str(args.model) + str("_dataset_")  + str(args.dataset) + str("_seed_") + str(args.seed) + ".pt"
+        file_path =  str(args.fedpms_folder_dir) + "src/data/weights/" + str(args.model) + str("_dataset_")  + str(args.dataset) + str("_seed_") + str(args.seed) + ".pt"
 
     initial_state_dict = torch.load(file_path)
     net_glob.load_state_dict(initial_state_dict)

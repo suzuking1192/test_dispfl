@@ -1,6 +1,6 @@
 #!/bin/bash
 python main_dispfl.py --model 'lenet5' \
---dataset 'cifar100' \
+--dataset 'mnist' \
 --partition_method 'dir' \
 --partition_alpha '0.3' \
 --batch_size 32 \

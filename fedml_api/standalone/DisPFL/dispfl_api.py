@@ -4,6 +4,9 @@ import math
 import pickle
 import random
 import time
+from scipy.stats import pearsonr
+import csv
+from datetime import date
 
 import pdb
 import numpy as np
@@ -13,6 +16,147 @@ from fedml_api.standalone.DisPFL import client
 from fedml_api.standalone.DisPFL.client import Client
 from fedml_api.standalone.DisPFL.slim_util import model_difference
 from fedml_api.standalone.DisPFL.slim_util import hamming_distance
+
+def calculate_avg_10_percent_personalized_weights_each_layer(mask_list,n_conv_layer=0):
+    n_client = len(mask_list)
+    n_layer = len(mask_list[0])
+
+
+
+    personalized_percentage_list = []
+
+    for l in range(n_layer):
+        personalized_percentage_list.append([])
+
+    for c_idx in range(n_client):
+        #print("sample mask",mask_list[c_idx][3][0])
+        for l in range(n_layer):
+            if l >= n_conv_layer:
+                input_size = len(mask_list[c_idx][l])
+                output_size = len(mask_list[c_idx][l][0])
+
+                total_unpruned_weights_num = 0
+                personalized_num = 0
+
+                for i in range(input_size):
+                    for o in range(output_size):
+                        if mask_list[c_idx][l][i][o] == 1:
+                            total_unpruned_weights_num += 1
+                            
+                            overlap_num = 0
+                            for ref_c_idx in range(n_client):
+                                if ref_c_idx != c_idx:
+                                    if mask_list[ref_c_idx][l][i][o] == 1:
+                                        overlap_num += 1
+                            if overlap_num <= 0.1 *(n_client):
+                                
+                                personalized_num += 1
+            else:
+                total_unpruned_weights_num = 0
+                personalized_num = 0
+                # conv layer
+                n_dim_0 = len(mask_list[c_idx][l])
+                n_dim_1 = len(mask_list[c_idx][l][0])
+                n_dim_2 = len(mask_list[c_idx][l][0][0])
+                n_dim_3 = len(mask_list[c_idx][l][0][0][0])
+                for i in range(n_dim_0):
+                    for j in range(n_dim_1):
+                        for k in range(n_dim_2):
+                            for m in range(n_dim_3):
+                                if mask_list[c_idx][l][i][j][k][m] == 1:
+                                    total_unpruned_weights_num += 1
+                                    
+                                    overlap_num = 0
+                                    for ref_c_idx in range(n_client):
+                                        if ref_c_idx != c_idx:
+                                            if mask_list[ref_c_idx][l][i][j][k][m] == 1:
+                                                overlap_num += 1
+                                    if overlap_num <= 0.1 *(n_client):
+                                        
+                                        personalized_num += 1
+
+            
+            #print("total_unpruned_weights_num = ",total_unpruned_weights_num)
+            personalized_percentage_list[l].append(personalized_num/total_unpruned_weights_num)
+    
+    personalized_parameters_rate_list = []
+    for l in range(n_layer):
+        print("layer idx =",l)
+        print("average percentage of personalized weights = ", sum(personalized_percentage_list[l])/n_client)
+        personalized_parameters_rate_list.append(sum(personalized_percentage_list[l])/n_client)
+
+    return personalized_parameters_rate_list
+
+
+def calculate_affinity_based_on_network(binary_mask_target,binary_mask_list_all,n_conv_layer=0):
+    affinity_list = []
+    n_client = len(binary_mask_list_all)
+    n_layer = len(binary_mask_target)
+
+    for c_idx in range(n_client):
+        total_num = 0
+        overlap = 0
+
+        for l in range(n_layer):
+            if l >= n_conv_layer:
+                input_size = len(binary_mask_target[l])
+                output_size = len(binary_mask_target[l][0])
+
+                for i in range(input_size):
+                    for o in range(output_size):
+                        if binary_mask_target[l][i][o] == 1:
+                            total_num += 1
+                            if binary_mask_list_all[c_idx][l][i][o] == 1:
+                                overlap += 1
+            else:
+                # conv layer
+                n_dim_0 = len(binary_mask_target[l])
+                n_dim_1 = len(binary_mask_target[l][0])
+                n_dim_2 = len(binary_mask_target[l][0][0])
+                n_dim_3 = len(binary_mask_target[l][0][0][0])
+                for i in range(n_dim_0):
+                    for j in range(n_dim_1):
+                        for k in range(n_dim_2):
+                            for m in range(n_dim_3):
+                                if binary_mask_target[l][i][j][k][m] == 1:
+                                    total_num += 1
+                                    if binary_mask_list_all[c_idx][l][i][j][k][m] == 1:
+                                        overlap += 1
+
+        affinity_list.append(overlap/total_num)
+
+
+    return affinity_list
+
+
+def calculate_correlation_between_label_similarity_and_network_similarity(users_train_labels,mask_list,n_conv_layer=0):
+    n_client = len(mask_list)
+
+    label_similarity_list = []
+    network_similarity_list = []
+
+    for c_idx in range(n_client):
+        affinity_list = calculate_affinity_based_on_network(mask_list[c_idx],mask_list,n_conv_layer)
+        #print("affinity_list = ",affinity_list)
+        for ref_c_idx in range(n_client):
+            if c_idx == ref_c_idx:
+                pass
+            else:
+                label_1 = np.unique(users_train_labels[c_idx])
+                label_2 = np.unique(users_train_labels[ref_c_idx])
+
+                label_similarity = len(set(label_1)&set(label_2))
+                
+                label_similarity_list.append(label_similarity)
+
+                network_similarity_list.append(affinity_list[ref_c_idx])
+
+    corr, _ = pearsonr(label_similarity_list, network_similarity_list)
+
+    print("correlation between label similarity and network similarity = ",corr)
+    return corr
+
+
 
 class dispflAPI(object):
     def __init__(self, dataset, device, args, model_trainer, logger):
@@ -165,7 +309,7 @@ class dispflAPI(object):
                 self.stat_info["sum_comm_params"] += num_comm_params
 
             self._local_test_on_all_clients(tst_results_ths_round, round_idx)
-            self._local_test_on_all_clients_new_mask(final_tst_results_ths_round, round_idx)
+            test_acc = self._local_test_on_all_clients_new_mask(final_tst_results_ths_round, round_idx)
 
         for index in range(self.args.client_num_in_total):
             tmp_dist = []
@@ -173,6 +317,60 @@ class dispflAPI(object):
                 tmp, _ = hamming_distance(mask_pers_local[index], mask_pers_local[clnt])
                 tmp_dist.append(tmp.item())
             self.stat_info["mask_dis_matrix"].append(tmp_dist)
+
+        # Save logs in the original file
+        mask_list = []
+        for idx in range(self.args.client_num_in_total):
+            local_mask_dic = mask_pers_local[idx]
+            local_mask = []
+            
+
+            for name,tensor in local_mask_dic.items():
+                if "weight" in name:
+                    local_mask.append(tensor.numpy())
+            mask_list.append(local_mask)
+
+        personalized_parameters_ratio_list = calculate_avg_10_percent_personalized_weights_each_layer(mask_list,2)
+
+        # Calculate correlation between label and network similarity
+        users_train_labels = []
+        for idx in range(self.args.client_num_in_total):
+            file_name_labels = str(self.args.fedpms_folder_dir) + "src/data/labels/" + "ours" +"_"+str(self.args.model)+ "_" + str(self.args.client_num_in_total) + "_" + str(self.args.dataset) + "_" + str(self.args.seed) + "_client_id_" + str(idx) + ".pickle"
+            with open(file_name_labels, 'rb') as fp:
+                labels = pickle.load(fp)
+            
+                #print("labels = ",labels)
+                users_train_labels.append(labels)
+
+        corr_label_and_network_similarity = calculate_correlation_between_label_similarity_and_network_similarity(users_train_labels,mask_list,2)
+        today = date.today()
+
+        csv_fields_each_round = ["round","num_users","frac","local_ep","local_bs","bs","lr","momentum","warmup_epoch","model","ks","in_ch","dataset","nclass","nsample_pc","noniid","pruning_percent","pruning_target","dist_thresh_fc","acc_thresh","seed","algorithm","avg_final_tacc","personalized_parameters_percentage","corr_label_network_similarity","date","delta_r","alpha","regrowth_param","parameter_to_multiply_avg","lambda_value"]
+        csv_rows_each_round = [[self.args.comm_round,self.args.client_num_in_total,self.args.frac,self.args.epochs,self.args.batch_size,128,self.args.lr,self.args.momentum,0,self.args.model,5,3,self.args.dataset,0,0,0,0,self.args.dense_ratio,0,0,self.args.seed,"DisPFL",test_acc,str(personalized_parameters_ratio_list),corr_label_and_network_similarity,today,0,self.args.anneal_factor,0,0,0]]
+        filename = str(self.args.fedpms_folder_dir) + 'src/data/log/final_results.csv'
+        with open(filename, 'a') as f:
+
+            # using csv.writer method from CSV package
+            write = csv.writer(f)
+            write.writerows(csv_rows_each_round)
+
+        # save final masks and weights
+        for idx in range(self.args.client_num_in_total):
+            final_mask = mask_list[idx]
+            final_weights = w_per_mdls[idx]
+
+            file_name_mask = str(self.args.fedpms_folder_dir) + "src/data/masks/" + "DisPFL" +"_"+str(self.args.model) + "_" + str(self.args.client_num_in_total)  + "_" + str(self.args.dataset) + "_" + str(self.args.seed) + "_client_id_" + str(idx) + ".pickle"
+            with open(file_name_mask, 'wb') as fp:
+                pickle.dump(final_mask, fp)
+
+            file_name_weights = str(self.args.fedpms_folder_dir) + "src/data/weights/" + "DisPFL" +"_"+str(self.args.model)+ "_" + str(self.args.client_num_in_total) + "_" + str(self.args.dataset) + "_" + str(self.args.seed) + "_client_id_" + str(idx) + ".pickle"
+            with open(file_name_weights, 'wb') as fp:
+                pickle.dump(final_weights, fp)
+
+            file_name_labels = str(self.args.fedpms_folder_dir) + "src/data/labels/" + "DisPFL" +"_"+str(self.args.model)+ "_" + str(self.args.client_num_in_total) + "_" + str(self.args.dataset) + "_" + str(self.args.seed) + "_client_id_" + str(idx) + ".pickle"
+            label = np.unique(users_train_labels[idx])
+            with open(file_name_labels, 'wb') as fp:
+                pickle.dump(label, fp)
 
         ## uncomment this if u like to save the final mask; Note masks for Resnet could be large, up to 1GB for 100 clients
         if self.args.save_masks:
@@ -298,6 +496,8 @@ class dispflAPI(object):
 
         self.logger.info(stats)
         self.stat_info["new_mask_test_acc"].append(test_acc)
+
+        return test_acc
 
     def record_avg_inference_flops(self, w_global, mask_pers=None):
         inference_flops=[]

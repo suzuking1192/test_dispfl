@@ -8,10 +8,10 @@ python main_dispfl.py --model 'lenet5' \
 --lr_decay 1 \
 --epochs 10 \
 --client_num_in_total 10 --frac 1 \
---comm_round 1 \
+--comm_round 100 \
 --dense_ratio 0.3 \
---anneal_factor 0.1 \
---seed 1 \
+--anneal_factor 0.5 \
+--seed 3 \
 --cs 'random' \
 --dis_gradient_check \
 --different_initial
